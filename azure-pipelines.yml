@@ -35,12 +35,6 @@ stages:
       steps:
       - template: templates/validation.yml
 
-  - stage: Approval
-    displayName: 'Approval'
-    dependsOn: Validation
-    jobs:
-      - template: templates/approval.yml
-
   - stage: Deploy
     displayName: 'CD'
     dependsOn: Approval

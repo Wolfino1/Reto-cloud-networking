@@ -60,10 +60,10 @@ steps:
         terraform init \
           -backend=true \
           -reconfigure \
-          -backend-config="assume_role={ role_arn = \"$(AWS_DEPLOY_ROLE)\" }" \
           -backend-config="bucket=$(CLIENT)-$(PROJECT)-$(ENVIRONMENT)-$(INFRASTRUCTURE)-$(CODE_APP)-terraform-state" \
           -backend-config="key=$(CLIENT)-$(PROJECT)-$(ENVIRONMENT)-$(INFRASTRUCTURE)/terraform.tfstate" \
           -backend-config="region=$(AWS_REGION)"
+
 
   # Terraform validate + fmt check
   - task: AWSShellScript@1
@@ -90,7 +90,6 @@ steps:
       inlineScript: |
         set -ex
         terraform plan \
-          -var="deploy_role_arn=$(AWS_DEPLOY_ROLE)" \
           -var-file="terraform.tfvars" \
           -out=tfplan
 
