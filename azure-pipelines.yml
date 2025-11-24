@@ -13,6 +13,6 @@ steps:
       # continueOnError: true # If you need the pipeline to succeed
       inputs:
         awsCredentials: "aws-oidc-federation"
-        regionName: 'aws-region-name'
+        regionName: 'us-east-1'
         awsCommand: 'sts'
         awsSubCommand: 'get-caller-identity'
