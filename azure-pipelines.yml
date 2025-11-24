@@ -1,0 +1,55 @@
+parameters:
+- name: environmentName
+  type: string
+  default: 'dev'
+
+# Variables comunes del dominio networking
+variables:
+  # Grupo de variables en Azure DevOps que ya debes crear
+  # (por ejemplo: tf-networking-dev)
+  - group: tf-networking-dev
+
+stages:
+  - stage: Prerequisites
+    displayName: 'Prerequisites'
+    jobs:
+    - job: Prerequisites
+      displayName: 'Prerequisites'
+      steps:
+      - checkout: self
+      - template: templates/prerequisites.yml
+  
+  - stage: Integration
+    dependsOn: Prerequisites
+    displayName: 'CI'
+    jobs:
+    - job: CI
+      displayName: 'Integration'
+      steps:
+      - checkout: self
+      - template: templates/integration.yml
+
+  - stage: Validation
+    displayName: 'Validation'
+    dependsOn: Integration
+    jobs:
+    - job: Planning
+      displayName: 'Terraform Plan'
+      steps:
+      - template: templates/validation.yml
+
+  - stage: Approval
+    displayName: 'Approval'
+    dependsOn: Validation
+    jobs:
+      - template: templates/approval.yml
+
+  - stage: Deploy
+    displayName: 'CD'
+    dependsOn: Approval
+    condition: succeeded()
+    jobs:
+    - job: Applying
+      displayName: 'Terraform Apply'
+      steps:
+      - template: templates/deploy.yml

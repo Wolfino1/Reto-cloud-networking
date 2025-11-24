@@ -1,0 +1,111 @@
+steps:
+  # Debug básico
+  - script: |
+      echo "============ Debug Information ============"
+      echo "Branch: $(BRANCH_NAME)"
+      echo "Environment: $(ENVIRONMENT)"
+      echo "Infrastructure: $(INFRASTRUCTURE)"
+      echo "Working directory: $(pwd)"
+      echo "==========================================="
+      ls -la
+    displayName: 'Debug Information'
+
+  # Instalar dependencias básicas
+  - script: |
+      set -ex
+      sudo apt-get update
+      sudo apt-get install -y curl unzip jq python3-pip zip
+    displayName: 'Install base tools'
+
+  # Instalar Terraform
+  - script: |
+      set -ex
+      echo "Installing Terraform $(TERRAFORM_VERSION)..."
+      curl -Lo terraform.zip https://releases.hashicorp.com/terraform/$(TERRAFORM_VERSION)/terraform_$(TERRAFORM_VERSION)_linux_amd64.zip
+      unzip -o terraform.zip
+      sudo mv -f terraform /usr/local/bin/terraform
+      terraform version
+    displayName: 'Install Terraform CLI'
+
+  # Terraform fmt / init (backend false) / validate
+  - script: |
+      set -ex
+      echo "Running terraform fmt..."
+      terraform fmt -recursive
+
+      echo "Running terraform init (backend=false)..."
+      terraform init -backend=false
+
+      echo "Running terraform validate..."
+      terraform validate
+    displayName: 'Terraform fmt / init / validate'
+
+  # Instalar Checkov
+  - script: |
+      set -ex
+      echo "Installing Checkov..."
+      pip install --upgrade pip
+      pip install checkov
+      checkov -v
+    displayName: 'Install Checkov'
+
+  # Ejecutar Checkov sobre el repo (IaC scanning)
+  - script: |
+      set -ex
+      mkdir -p checkov_report
+      echo "Running Checkov scan..."
+      checkov -d . \
+        --framework terraform \
+        --output junitxml \
+        --quiet \
+        > checkov_report/checkov-report.xml || echo "Checkov finished with non-zero exit"
+    displayName: 'Run Checkov Analysis'
+    continueOnError: true
+
+  # (Opcional) Instalar KICS
+  - script: |
+      set -ex
+      echo "Installing KICS..."
+      curl -sSL https://github.com/Checkmarx/kics/releases/latest/download/kics_linux_amd64.tar.gz -o kics.tar.gz
+      tar -xzf kics.tar.gz
+      sudo mv kics /usr/local/bin/kics
+      kics version || true
+    displayName: 'Install KICS'
+
+  # (Opcional) Ejecutar KICS
+  - script: |
+      set -ex
+      mkdir -p kics_report
+      echo "Running KICS scan..."
+      kics scan -p . \
+        --ci \
+        --report-formats "sarif" \
+        --output-path kics_report \
+        || echo "KICS finished with non-zero exit"
+    displayName: 'Run KICS Analysis'
+    continueOnError: true
+
+  # Empaquetar código Terraform como artifact
+  - script: |
+      set -ex
+      echo "Creating terraform_artifact.zip..."
+      zip -r terraform_artifact.zip . \
+        -x "*.git*" \
+        -x "*/.terraform/*"
+    displayName: 'Create Terraform Artifact'
+
+  # Copiar artifacts al staging
+  - task: CopyFiles@2
+    displayName: 'Prepare Artifacts'
+    inputs:
+      SourceFolder: '$(Build.SourcesDirectory)'
+      Contents: |
+        terraform_artifact.zip
+        checkov_report/**
+        kics_report/**
+      TargetFolder: '$(Build.ArtifactStagingDirectory)'
+
+  # Publicar artifacts de build
+  - publish: $(Build.ArtifactStagingDirectory)
+    artifact: BuildArtifacts
+    displayName: 'Publish Build Artifacts'

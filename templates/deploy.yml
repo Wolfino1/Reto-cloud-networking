@@ -1,0 +1,77 @@
+steps:
+  - bash: |
+      echo "============ Debug Information ============"
+      echo "Branch: $(BRANCH_NAME)"
+      echo "Environment: $(ENVIRONMENT)"
+      echo "Infrastructure Type: $(INFRASTRUCTURE)"
+      echo "Working Directory: $(pwd)"
+      echo "==========================================="
+    displayName: 'Show Debug Information'
+
+  - download: current
+    artifact: TerraformPlan
+    displayName: 'Download Terraform Plan'
+
+  - download: current
+    artifact: BuildArtifacts
+    displayName: 'Download Build Artifacts'
+
+  # Preparar workspace
+  - bash: |
+      set -ex
+      echo "Preparing workspace..."
+      unzip -o $(Pipeline.Workspace)/BuildArtifacts/terraform_artifact.zip
+
+      echo "Copying tfplan from artifact..."
+      cp $(Pipeline.Workspace)/TerraformPlan/tfplan tfplan
+
+      echo "Workspace contents:"
+      ls -la
+    displayName: 'Prepare Workspace'
+
+  # Install Terraform
+  - script: |
+      set -ex
+      wget https://releases.hashicorp.com/terraform/$(TERRAFORM_VERSION)/terraform_$(TERRAFORM_VERSION)_linux_amd64.zip
+      unzip -o terraform_$(TERRAFORM_VERSION)_linux_amd64.zip
+      sudo mv -f terraform /usr/local/bin/
+      rm terraform_$(TERRAFORM_VERSION)_linux_amd64.zip
+      terraform version
+    displayName: 'Install Terraform'
+
+  # Terraform init (mismo backend que en Validation)
+  - task: AWSShellScript@1
+    displayName: "Terraform Init"
+    inputs:
+      awsCredentials: "$(AWS_SERVICE_CONNECTION)"  
+      regionName: "$(AWS_REGION)"
+      scriptType: "inline"
+      inlineScript: |
+        set -ex
+        echo "Initializing Terraform..."
+        echo "Using backend configuration:"
+        echo "  Bucket: $(CLIENT)-$(PROJECT)-$(ENVIRONMENT)-$(INFRASTRUCTURE)-$(CODE_APP)-terraform-state"
+        echo "  Role ARN: $(AWS_DEPLOY_ROLE)"
+
+        terraform init \
+          -backend=true \
+          -reconfigure \
+          -backend-config="assume_role={ role_arn = \"$(AWS_DEPLOY_ROLE)\" }" \
+          -backend-config="bucket=$(CLIENT)-$(PROJECT)-$(ENVIRONMENT)-$(INFRASTRUCTURE)-$(CODE_APP)-terraform-state" \
+          -backend-config="key=$(CLIENT)-$(PROJECT)-$(ENVIRONMENT)-$(INFRASTRUCTURE)/terraform.tfstate" \
+          -backend-config="region=$(AWS_REGION)"
+
+  # Terraform Apply usando el plan generado
+  - task: AWSShellScript@1
+    displayName: "Terraform Apply"
+    inputs:
+      awsCredentials: "$(AWS_SERVICE_CONNECTION)"
+      regionName: "$(AWS_REGION)"
+      scriptType: "inline"
+      inlineScript: |
+        set -ex
+        terraform apply \
+          -var="deploy_role_arn=$(AWS_DEPLOY_ROLE)" \
+          -var-file="terraform.tfvars" \
+          -auto-approve \
+          tfplan

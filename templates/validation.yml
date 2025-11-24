@@ -1,0 +1,128 @@
+steps:
+  # Debug Information
+  - bash: |
+      echo "============ Debug Information ============"
+      echo "Branch: $(BRANCH_NAME)"
+      echo "Environment: $(ENVIRONMENT)"
+      echo "Infrastructure Type: $(INFRASTRUCTURE)"
+      echo "Working Directory: $(pwd)"
+      echo "==========================================="
+    displayName: 'Show Debug Information'
+
+  # Recuperar artifact
+  - download: current
+    artifact: BuildArtifacts
+    displayName: 'Download Build Artifacts'
+
+  # Preparar workspace
+  - bash: |
+      set -ex
+      echo "Preparing workspace..."
+      unzip -o $(Pipeline.Workspace)/BuildArtifacts/terraform_artifact.zip
+      
+      echo "Validating workspace content..."
+      if [ ! -f "main.tf" ]; then
+        echo "Error: main.tf not found after extraction"
+        exit 1
+      fi
+      
+      echo "Workspace contents:"
+      ls -la
+      
+      echo "Terraform files found:"
+      find . -name "*.tf" -type f
+    displayName: 'Prepare Workspace'
+
+  # Install Terraform
+  - script: |
+      set -ex
+      wget https://releases.hashicorp.com/terraform/$(TERRAFORM_VERSION)/terraform_$(TERRAFORM_VERSION)_linux_amd64.zip
+      unzip -o terraform_$(TERRAFORM_VERSION)_linux_amd64.zip
+      sudo mv -f terraform /usr/local/bin/
+      rm terraform_$(TERRAFORM_VERSION)_linux_amd64.zip
+      terraform version
+    displayName: 'Install Terraform'
+
+  # Terraform init con backend remoto S3
+  - task: AWSShellScript@1
+    displayName: "Terraform Init"
+    inputs:
+      awsCredentials: "$(AWS_SERVICE_CONNECTION)"  
+      regionName: "$(AWS_REGION)"
+      scriptType: "inline"
+      inlineScript: |
+        set -ex
+        echo "Initializing Terraform..."
+        echo "Using backend configuration:"
+        echo "  Bucket: $(CLIENT)-$(PROJECT)-$(ENVIRONMENT)-$(INFRASTRUCTURE)-$(CODE_APP)-terraform-state"
+        echo "  Role ARN: $(AWS_DEPLOY_ROLE)"
+
+        terraform init \
+          -backend=true \
+          -reconfigure \
+          -backend-config="assume_role={ role_arn = \"$(AWS_DEPLOY_ROLE)\" }" \
+          -backend-config="bucket=$(CLIENT)-$(PROJECT)-$(ENVIRONMENT)-$(INFRASTRUCTURE)-$(CODE_APP)-terraform-state" \
+          -backend-config="key=$(CLIENT)-$(PROJECT)-$(ENVIRONMENT)-$(INFRASTRUCTURE)/terraform.tfstate" \
+          -backend-config="region=$(AWS_REGION)"
+
+  # Terraform validate + fmt check
+  - task: AWSShellScript@1
+    displayName: 'Terraform Validate'
+    inputs:
+      awsCredentials: "$(AWS_SERVICE_CONNECTION)"  
+      regionName: "$(AWS_REGION)"
+      scriptType: "inline"
+      inlineScript: |
+        set -ex
+        echo "Checking Terraform formatting..."
+        terraform fmt -check -diff
+        
+        echo "Validating Terraform configuration..."
+        terraform validate
+
+  # Terraform Plan
+  - task: AWSShellScript@1
+    displayName: "Terraform Plan"
+    inputs:
+      awsCredentials: "$(AWS_SERVICE_CONNECTION)"
+      regionName: "$(AWS_REGION)"
+      scriptType: "inline"
+      inlineScript: |
+        set -ex
+        terraform plan \
+          -var="deploy_role_arn=$(AWS_DEPLOY_ROLE)" \
+          -var-file="terraform.tfvars" \
+          -out=tfplan
+
+  # Mostrar el plan
+  - script: |
+      set -ex
+      echo "Displaying Terraform plan..."
+      terraform show -no-color tfplan > plan.txt
+    
+      echo "Plan Summary:"
+      if grep -q "No changes" plan.txt; then
+        echo "No hay cambios pendientes de aplicar"
+      else
+        echo "Cambios detectados:"
+        grep -E '(Plan:|will be created|will be destroyed|will be updated)' plan.txt || true
+      fi
+    displayName: 'Show Plan'
+
+  # Guardar el plan como artifact
+  - publish: tfplan
+    artifact: TerraformPlan
+    displayName: 'Publish Terraform Plan'
+
+  # Guardar logs como artifact adicional
+  - task: CopyFiles@2
+    inputs:
+      Contents: |
+        *.log
+        plan.txt
+      TargetFolder: '$(Build.ArtifactStagingDirectory)/logs'
+    displayName: 'Collect Logs'
+
+  - publish: $(Build.ArtifactStagingDirectory)/logs
+    artifact: PlanLogs
+    displayName: 'Publish Logs'
