@@ -1,55 +1,18 @@
-parameters:
-- name: environmentName
-  type: string
-  default: 'dev'
+trigger:
+    - main
 
-# Variables comunes del dominio networking
+pool:
+    vmImage: ubuntu-latest
+
 variables:
-  # Grupo de variables en Azure DevOps que ya debes crear
-  # (por ejemplo: tf-networking-dev)
-  - group: tf-networking-dev
+  aws.rolecredential.maxduration: "3600" # Can be set from 900 - 43200s
 
-stages:
-  - stage: Prerequisites
-    displayName: 'Prerequisites'
-    jobs:
-    - job: Prerequisites
-      displayName: 'Prerequisites'
-      steps:
-      - checkout: self
-      - template: templates/prerequisites.yml
-  
-  - stage: Integration
-    dependsOn: Prerequisites
-    displayName: 'CI'
-    jobs:
-    - job: CI
-      displayName: 'Integration'
-      steps:
-      - checkout: self
-      - template: templates/integration.yml
-
-  - stage: Validation
-    displayName: 'Validation'
-    dependsOn: Integration
-    jobs:
-    - job: Planning
-      displayName: 'Terraform Plan'
-      steps:
-      - template: templates/validation.yml
-
-  - stage: Approval
-    displayName: 'Approval'
-    dependsOn: Validation
-    jobs:
-      - template: templates/approval.yml
-
-  - stage: Deploy
-    displayName: 'CD'
-    dependsOn: Approval
-    condition: succeeded()
-    jobs:
-    - job: Applying
-      displayName: 'Terraform Apply'
-      steps:
-      - template: templates/deploy.yml
+steps:
+    - task: AWSCLI@1
+      displayName: "Running aws-cli get-caller-identity"
+      # continueOnError: true # If you need the pipeline to succeed
+      inputs:
+        awsCredentials: "aws-oidc-federation"
+        regionName: 'aws-region-name'
+        awsCommand: 'sts'
+        awsSubCommand: 'get-caller-identity'
