@@ -1,3 +1,5 @@
+client      = "pragma-cloud"
+project     = "tienda-online"
 aws_region  = "us-east-1"
 environment = "dev"
 
@@ -13,7 +15,6 @@ create_nat = false
 # VPC Flow Logs
 flow_log_retention_in_days = 30
 
-# 4 grupos lógicos: public / service / database / reserved
 subnet_config = {
   public = {
     public      = true
@@ -22,11 +23,11 @@ subnet_config = {
     subnets = [
       {
         cidr_block        = "10.0.0.0/24"
-        availability_zone = "a" # us-east-1a
+        availability_zone = "a"
       },
       {
         cidr_block        = "10.0.1.0/24"
-        availability_zone = "b" # us-east-1b
+        availability_zone = "b"
       }
     ]
 
@@ -35,7 +36,7 @@ subnet_config = {
 
   service = {
     public      = false
-    include_nat = true  # pensado para futuro NAT si activas create_nat = true
+    include_nat = true
 
     subnets = [
       {

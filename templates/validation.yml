@@ -90,6 +90,7 @@ steps:
       inlineScript: |
         set -ex
         terraform plan \
+          -input=false \
           -var-file="terraform.tfvars" \
           -out=tfplan
 
