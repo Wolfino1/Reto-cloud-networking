@@ -62,29 +62,6 @@ steps:
     displayName: 'Run Checkov Analysis'
     continueOnError: true
 
-  # (Opcional) Instalar KICS
-  - script: |
-      set -ex
-      echo "Installing KICS..."
-      curl -sSL https://github.com/Checkmarx/kics/releases/latest/download/kics_linux_amd64.tar.gz -o kics.tar.gz
-      tar -xzf kics.tar.gz
-      sudo mv kics /usr/local/bin/kics
-      kics version || true
-    displayName: 'Install KICS'
-
-  # (Opcional) Ejecutar KICS
-  - script: |
-      set -ex
-      mkdir -p kics_report
-      echo "Running KICS scan..."
-      kics scan -p . \
-        --ci \
-        --report-formats "sarif" \
-        --output-path kics_report \
-        || echo "KICS finished with non-zero exit"
-    displayName: 'Run KICS Analysis'
-    continueOnError: true
-
   # Empaquetar código Terraform como artifact
   - script: |
       set -ex
@@ -102,7 +79,6 @@ steps:
       Contents: |
         terraform_artifact.zip
         checkov_report/**
-        kics_report/**
       TargetFolder: '$(Build.ArtifactStagingDirectory)'
 
   # Publicar artifacts de build
